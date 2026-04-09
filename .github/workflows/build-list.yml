@@ -45,15 +45,20 @@ jobs:
           block_raw="$workdir/block_raw.txt"
           allow_raw="$workdir/allow_raw.txt"
 
-          awk '
-            BEGIN{mode=""}
-            /^[[:space:]]*blocklist:[[:space:]]*$/ {mode="block"; next}
-            /^[[:space:]]*allowlist:[[:space:]]*$/ {mode="allow"; next}
-            mode=="block" && /\[x\]/ { sub(/^.*\[x\][[:space:]]*/, "", $0); sub(/[[:space:]]+$/, "", $0); print > "'"$block_src"'" }
-            mode=="allow" && /\[x\]/ { sub(/^.*\[x\][[:space:]]*/, "", $0); sub(/[[:space:]]+$/, "", $0); print > "'"$allow_src"'" }
-          ' list.md
+          # 1. FORZA LA CREAZIONE DI TUTTI I FILE (Risolve l'errore "No such file or directory")
+          touch "$block_src" "$allow_src" "$block_raw" "$allow_raw"
 
-          : > "$block_raw"
+          # 2. Usa -v per passare le variabili ad awk in modo sicuro
+          if [ -f "list.md" ]; then
+            awk -v bsrc="$block_src" -v asrc="$allow_src" '
+              BEGIN{mode=""}
+              /^[[:space:]]*blocklist:[[:space:]]*$/ {mode="block"; next}
+              /^[[:space:]]*allowlist:[[:space:]]*$/ {mode="allow"; next}
+              mode=="block" && /\[x\]/ { sub(/^.*\[x\][[:space:]]*/, "", $0); sub(/[[:space:]]+$/, "", $0); print >> bsrc }
+              mode=="allow" && /\[x\]/ { sub(/^.*\[x\][[:space:]]*/, "", $0); sub(/[[:space:]]+$/, "", $0); print >> asrc }
+            ' list.md
+          fi
+
           while IFS= read -r line || [ -n "$line" ]; do
             [ -z "$line" ] && continue
             if [[ "$line" == list:* ]]; then
@@ -65,7 +70,6 @@ jobs:
             fi
           done < "$block_src"
 
-          : > "$allow_raw"
           while IFS= read -r line || [ -n "$line" ]; do
             [ -z "$line" ] && continue
             if [[ "$line" == list:* ]]; then
@@ -77,12 +81,15 @@ jobs:
             fi
           done < "$allow_src"
 
+          export WORKDIR="$workdir"
+
           python3 <<'PY'
           import re
+          import os
           from pathlib import Path
           from collections import OrderedDict
 
-          base = Path("'"$workdir"'")
+          base = Path(os.environ["WORKDIR"])
           block_raw = (base / "block_raw.txt").read_text(encoding="utf-8", errors="ignore").splitlines()
           allow_raw = (base / "allow_raw.txt").read_text(encoding="utf-8", errors="ignore").splitlines()
 
